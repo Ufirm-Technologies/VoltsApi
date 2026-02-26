@@ -1,0 +1,45 @@
+# Build results
+bin/
+obj/
+cache/
+dll/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IIS
+iisexpress/
+
+# Publish output
+publish/
+
+# Secrets
+appsettings.Development.json
+secrets.json
