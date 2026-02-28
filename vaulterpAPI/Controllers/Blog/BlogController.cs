@@ -268,23 +268,23 @@ namespace vaulterpAPI.Controllers.Blog
         // -----------------------------
         // Mapper
         // -----------------------------
-        private BlogDto MapBlog(NpgsqlDataReader reader)
-        {
-            return new BlogDto
-            {
-                Id = Guid.Parse(reader["id"].ToString()),
-                Title = reader["title"].ToString(),
-                Slug = reader["slug"].ToString(),
-                Content = reader["content"]?.ToString(),
-                AuthorId = reader["author_id"] as Guid?,
-                AuthorName = reader["author_name"]?.ToString(),
-                FeaturedImage = reader["featured_image"]?.ToString(),
-                Tags = reader["tags"] as string[],
-                Status = reader["status"].ToString(),
-                Views = Convert.ToInt32(reader["views"]),
-                Likes = Convert.ToInt32(reader["likes"])
-            };
-        }
+        //private BlogDto MapBlog(NpgsqlDataReader reader)
+        //{
+        //    return new BlogDto
+        //    {
+        //        Id = Guid.Parse(reader["id"].ToString()),
+        //        Title = reader["title"].ToString(),
+        //        Slug = reader["slug"].ToString(),
+        //        Content = reader["content"]?.ToString(),
+        //        AuthorId = reader["author_id"] as Guid?,
+        //        AuthorName = reader["author_name"]?.ToString(),
+        //        FeaturedImage = reader["featured_image"]?.ToString(),
+        //        Tags = reader["tags"] as string[],
+        //        Status = reader["status"].ToString(),
+        //        Views = Convert.ToInt32(reader["views"]),
+        //        Likes = Convert.ToInt32(reader["likes"])
+        //    };
+        //}
 
 
         //[HttpPost("CreateStructuredBlog")]
@@ -455,12 +455,85 @@ namespace vaulterpAPI.Controllers.Blog
         // API 2: Create Structured Blog
         // POST /api/Blog/CreateStructuredBlog
         // ─────────────────────────────────────────
+        //[HttpPost("CreateStructuredBlog")]
+        //public async Task<IActionResult> CreateStructuredBlog([FromBody] StructuredBlogRequest model)
+        //{
+        //    try
+        //    {
+        //        // ── Validations ──
+        //        if (string.IsNullOrWhiteSpace(model.Title))
+        //            return BadRequest("Title is required");
+
+        //        if (string.IsNullOrWhiteSpace(model.Slug))
+        //            return BadRequest("Slug is required");
+
+        //        if (model.Sections == null || model.Sections.Count == 0)
+        //            return BadRequest("At least one section is required");
+
+        //        // ── First section image = featured image ──
+        //        string? featuredImage = model.Sections[0].ImageUrl;
+
+        //        // ── Build structured JSON ──
+        //        var structuredContent = new
+        //        {
+        //            type = "structured",
+        //            sections = model.Sections.Select((s, i) => new
+        //            {
+        //                order = i + 1,
+        //                imageUrl = s.ImageUrl,
+        //                heading = s.Heading,
+        //                text = s.Text
+        //            })
+        //        };
+
+        //        string finalContent = System.Text.Json.JsonSerializer.Serialize(structuredContent);
+
+        //        // ── Insert into DB ──
+        //        using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
+        //        using var cmd = new Npgsql.NpgsqlCommand(@"
+        //        INSERT INTO clinexy.blogs
+        //        (id, title, slug, content, author_id, author_name, featured_image, tags, status, views, likes, created_at, updated_at)
+        //        VALUES
+        //        (@id, @title, @slug, @content, @author_id, @author_name, @featured_image, @tags, @status, 0, 0, NOW(), NOW())
+        //        RETURNING id
+        //    ", conn);
+
+        //        var blogId = Guid.NewGuid();
+
+        //        cmd.Parameters.AddWithValue("@id", blogId);
+        //        cmd.Parameters.AddWithValue("@title", model.Title);
+        //        cmd.Parameters.AddWithValue("@slug", model.Slug);
+        //        cmd.Parameters.AddWithValue("@content", NpgsqlTypes.NpgsqlDbType.Jsonb, finalContent);
+        //        cmd.Parameters.AddWithValue("@author_id", (object?)model.AuthorId ?? DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@author_name", (object?)model.AuthorName ?? DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@featured_image", (object?)featuredImage ?? DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@tags", (object?)model.Tags ?? DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@status", string.IsNullOrEmpty(model.Status) ? "draft" : model.Status);
+
+        //        await conn.OpenAsync();
+        //        var insertedId = await cmd.ExecuteScalarAsync();
+
+        //        return Ok(new
+        //        {
+        //            message = "Blog created successfully",
+        //            blogId = insertedId
+        //        });
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, new
+        //        {
+        //            message = "Failed to create blog",
+        //            error = ex.Message
+        //        });
+        //    }
+        //}
+
         [HttpPost("CreateStructuredBlog")]
         public async Task<IActionResult> CreateStructuredBlog([FromBody] StructuredBlogRequest model)
         {
             try
             {
-                // ── Validations ──
                 if (string.IsNullOrWhiteSpace(model.Title))
                     return BadRequest("Title is required");
 
@@ -470,10 +543,11 @@ namespace vaulterpAPI.Controllers.Blog
                 if (model.Sections == null || model.Sections.Count == 0)
                     return BadRequest("At least one section is required");
 
-                // ── First section image = featured image ──
+                // Normalize slug (SEO safe)
+                var slug = model.Slug.Trim().ToLower().Replace(" ", "-");
+
                 string? featuredImage = model.Sections[0].ImageUrl;
 
-                // ── Build structured JSON ──
                 var structuredContent = new
                 {
                     type = "structured",
@@ -481,6 +555,7 @@ namespace vaulterpAPI.Controllers.Blog
                     {
                         order = i + 1,
                         imageUrl = s.ImageUrl,
+                        altText = s.AltText,     //Add
                         heading = s.Heading,
                         text = s.Text
                     })
@@ -488,44 +563,71 @@ namespace vaulterpAPI.Controllers.Blog
 
                 string finalContent = System.Text.Json.JsonSerializer.Serialize(structuredContent);
 
-                // ── Insert into DB ──
                 using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
+                await conn.OpenAsync();
+
                 using var cmd = new Npgsql.NpgsqlCommand(@"
-                INSERT INTO clinexy.blogs
-                (id, title, slug, content, author_id, author_name, featured_image, tags, status, views, likes, created_at, updated_at)
-                VALUES
-                (@id, @title, @slug, @content, @author_id, @author_name, @featured_image, @tags, @status, 0, 0, NOW(), NOW())
-                RETURNING id
-            ", conn);
+        INSERT INTO clinexy.blogs
+        (id, title, slug, content, meta_title, meta_description, meta_keywords,
+         canonical_url, og_image, author_id, author_name,
+         featured_image, tags, status, views, likes, created_at, updated_at)
+        VALUES
+        (@id, @title, @slug, @content, @meta_title, @meta_description,  @meta_keywords,
+         @canonical_url, @og_image, @author_id, @author_name,
+         @featured_image, @tags, @status, 0, 0, NOW(), NOW())
+        RETURNING id
+        ", conn);
 
                 var blogId = Guid.NewGuid();
 
                 cmd.Parameters.AddWithValue("@id", blogId);
                 cmd.Parameters.AddWithValue("@title", model.Title);
-                cmd.Parameters.AddWithValue("@slug", model.Slug);
+                cmd.Parameters.AddWithValue("@slug", slug);
                 cmd.Parameters.AddWithValue("@content", NpgsqlTypes.NpgsqlDbType.Jsonb, finalContent);
+                cmd.Parameters.AddWithValue(
+     "@meta_title",
+     (object?)(model.MetaTitle ?? model.Title) ?? DBNull.Value
+ );
+
+                cmd.Parameters.AddWithValue(
+                    "@meta_description",
+                    (object?)model.MetaDescription ?? DBNull.Value
+                );
+
+                cmd.Parameters.AddWithValue(
+                    "@canonical_url",
+                    (object?)model.CanonicalUrl ?? DBNull.Value
+                );
+
+                cmd.Parameters.AddWithValue(
+                    "@og_image",
+                    (object?)model.OgImage ?? DBNull.Value
+                );
+                cmd.Parameters.AddWithValue(
+    "@meta_keywords",
+    (object?)model.MetaKeywords ?? DBNull.Value
+);
                 cmd.Parameters.AddWithValue("@author_id", (object?)model.AuthorId ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@author_name", (object?)model.AuthorName ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@featured_image", (object?)featuredImage ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@tags", (object?)model.Tags ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@status", string.IsNullOrEmpty(model.Status) ? "draft" : model.Status);
 
-                await conn.OpenAsync();
                 var insertedId = await cmd.ExecuteScalarAsync();
 
                 return Ok(new
                 {
-                    message = "Blog created successfully",
+                    message = "SEO Optimized Blog created successfully",
                     blogId = insertedId
                 });
             }
+            catch (PostgresException ex) when (ex.SqlState == "23505")
+            {
+                return BadRequest("Slug already exists. Please use different slug.");
+            }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "Failed to create blog",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Failed", error = ex.Message });
             }
         }
 
@@ -533,57 +635,246 @@ namespace vaulterpAPI.Controllers.Blog
         // GET Single Blog by Slug
         // GET /api/Blog/GetBlog/{slug}
         // ─────────────────────────────────────────
+
+
+
+        //[HttpGet("GetBlog/{slug}")]
+        //public async Task<IActionResult> GetBlog(string slug)
+        //{
+        //    try
+        //    {
+        //        using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
+        //        using var cmd = new Npgsql.NpgsqlCommand(@"
+        //    SELECT id, title, slug, content, author_id, author_name, 
+        //           featured_image, tags, status, views, likes, created_at
+        //    FROM clinexy.blogs
+        //    WHERE slug = @slug
+        //", conn);
+
+        //        cmd.Parameters.AddWithValue("@slug", slug);
+        //        await conn.OpenAsync();
+
+        //        using var reader = await cmd.ExecuteReaderAsync();
+
+        //        if (!await reader.ReadAsync())
+        //            return NotFound(new { message = "Blog not found" });
+
+        //        // Parse the JSONB content column
+        //        var contentJson = reader.GetString(3);
+        //        var content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+
+        //        return Ok(new
+        //        {
+        //            id = reader.GetGuid(0),
+        //            title = reader.GetString(1),
+        //            slug = reader.GetString(2),
+        //            authorId = reader.IsDBNull(4) ? null : reader.GetValue(4),
+        //            authorName = reader.IsDBNull(5) ? null : reader.GetString(5),
+        //            featuredImage = reader.IsDBNull(6) ? null : reader.GetString(6),
+        //            tags = reader.IsDBNull(7) ? null : reader.GetValue(7),
+        //            status = reader.GetString(8),
+        //            views = reader.GetInt32(9),
+        //            likes = reader.GetInt32(10),
+        //            createdAt = reader.GetDateTime(11),
+        //            sections = content?.Sections  // ✅ typed list with image+heading+text
+        //        });
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, new { message = "Failed to fetch blog", error = ex.Message });
+        //    }
+        //}
+
+        // ===================== 3) GetBlog/{slug} FIX =====================
+        //[HttpGet("GetBlog/{slug}")]
+        //public async Task<IActionResult> GetBlog(string slug)
+        //{
+        //    try
+        //    {
+        //        using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
+        //        await conn.OpenAsync();
+
+        //        using (var updateCmd = new Npgsql.NpgsqlCommand(
+        //            "UPDATE clinexy.blogs SET views = views + 1 WHERE slug = @slug", conn))
+        //        {
+        //            updateCmd.Parameters.AddWithValue("@slug", slug);
+        //            await updateCmd.ExecuteNonQueryAsync();
+        //        }
+
+        //        using var cmd = new Npgsql.NpgsqlCommand(@"
+        //            SELECT id, title, slug, content,
+        //                   meta_title, meta_description, meta_keywords, canonical_url, og_image,
+        //                   author_name, featured_image, tags, views, created_at
+        //            FROM clinexy.blogs
+        //            WHERE slug = @slug AND status = 'published'
+        //        ", conn);
+
+        //        cmd.Parameters.AddWithValue("@slug", slug);
+
+        //        using var reader = await cmd.ExecuteReaderAsync();
+
+        //        if (!await reader.ReadAsync())
+        //            return NotFound(new { message = "Blog not found" });
+
+        //        var contentJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+        //        StructuredContent? content = null;
+        //        if (!string.IsNullOrWhiteSpace(contentJson))
+        //        {
+        //            content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+        //        }
+
+        //        return Ok(new
+        //        {
+        //            id = reader.GetGuid(0),
+        //            title = reader.GetString(1),
+        //            slug = reader.GetString(2),
+        //            content = contentJson,
+
+        //            metaTitle = reader.IsDBNull(4) ? null : reader.GetString(4),
+        //            metaDescription = reader.IsDBNull(5) ? null : reader.GetString(5),
+        //            metaKeywords = reader.IsDBNull(6) ? null : reader.GetString(6),
+        //            canonicalUrl = reader.IsDBNull(7) ? null : reader.GetString(7),
+        //            ogImage = reader.IsDBNull(8) ? null : reader.GetString(8),
+
+        //            authorName = reader.IsDBNull(9) ? null : reader.GetString(9),
+        //            featuredImage = reader.IsDBNull(10) ? null : reader.GetString(10),
+        //            tags = reader.IsDBNull(11) ? null : reader.GetValue(11),
+        //            views = reader.GetInt32(12),
+        //            createdAt = reader.GetDateTime(13),
+        //            sections = content?.Sections
+        //        });
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, new { message = "Failed", error = ex.Message });
+        //    }
+        //}
+
+        // ===================== 3) GetBlog/{slug} FIX =====================
         [HttpGet("GetBlog/{slug}")]
         public async Task<IActionResult> GetBlog(string slug)
         {
             try
             {
                 using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
+                await conn.OpenAsync();
+
+                using (var updateCmd = new Npgsql.NpgsqlCommand(
+                    "UPDATE clinexy.blogs SET views = views + 1 WHERE slug = @slug", conn))
+                {
+                    updateCmd.Parameters.AddWithValue("@slug", slug);
+                    await updateCmd.ExecuteNonQueryAsync();
+                }
+
                 using var cmd = new Npgsql.NpgsqlCommand(@"
-            SELECT id, title, slug, content, author_id, author_name, 
-                   featured_image, tags, status, views, likes, created_at
+            SELECT id, title, slug, content,
+                   meta_title, meta_description, meta_keywords, canonical_url, og_image,
+                   author_name, featured_image, tags, views, created_at
             FROM clinexy.blogs
-            WHERE slug = @slug
+            WHERE slug = @slug AND status = 'published'
         ", conn);
 
                 cmd.Parameters.AddWithValue("@slug", slug);
-                await conn.OpenAsync();
 
                 using var reader = await cmd.ExecuteReaderAsync();
 
                 if (!await reader.ReadAsync())
                     return NotFound(new { message = "Blog not found" });
 
-                // Parse the JSONB content column
-                var contentJson = reader.GetString(3);
-                var content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+                var contentJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+                StructuredContent? content = null;
+                if (!string.IsNullOrWhiteSpace(contentJson))
+                {
+                    content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+                }
 
                 return Ok(new
                 {
                     id = reader.GetGuid(0),
                     title = reader.GetString(1),
                     slug = reader.GetString(2),
-                    authorId = reader.IsDBNull(4) ? null : reader.GetValue(4),
-                    authorName = reader.IsDBNull(5) ? null : reader.GetString(5),
-                    featuredImage = reader.IsDBNull(6) ? null : reader.GetString(6),
-                    tags = reader.IsDBNull(7) ? null : reader.GetValue(7),
-                    status = reader.GetString(8),
-                    views = reader.GetInt32(9),
-                    likes = reader.GetInt32(10),
-                    createdAt = reader.GetDateTime(11),
-                    sections = content?.Sections  // ✅ typed list with image+heading+text
+                    content = contentJson,
+
+                    metaTitle = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    metaDescription = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    metaKeywords = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    canonicalUrl = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    ogImage = reader.IsDBNull(8) ? null : reader.GetString(8),
+
+                    authorName = reader.IsDBNull(9) ? null : reader.GetString(9),
+                    featuredImage = reader.IsDBNull(10) ? null : reader.GetString(10),
+                    tags = reader.IsDBNull(11) ? null : reader.GetValue(11),
+                    views = reader.GetInt32(12),
+                    createdAt = reader.GetDateTime(13),
+                    sections = content?.Sections
                 });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Failed to fetch blog", error = ex.Message });
+                return StatusCode(500, new { message = "Failed", error = ex.Message });
             }
         }
+
+
 
         // ─────────────────────────────────────────
         // GET All Blogs with full sections
         // GET /api/Blog/GetAllBlogs
         // ─────────────────────────────────────────
+        //[HttpGet("GetAllBlogs")]
+        //public async Task<IActionResult> GetAllBlogs()
+        //{
+        //    try
+        //    {
+        //        using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
+        //        using var cmd = new Npgsql.NpgsqlCommand(@"
+        //    SELECT id, title, slug, content, author_id, author_name, 
+        //           featured_image, tags, status, views, likes, created_at
+        //    FROM clinexy.blogs
+        //    ORDER BY created_at DESC
+        //", conn);
+
+        //        await conn.OpenAsync();
+        //        using var reader = await cmd.ExecuteReaderAsync();
+
+        //        var blogs = new List<object>();
+
+        //        while (await reader.ReadAsync())
+        //        {
+        //            // Parse sections from JSONB content column
+        //            var contentJson = reader.GetString(3);
+        //            var content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+
+        //            blogs.Add(new
+        //            {
+        //                id = reader.GetGuid(0),
+        //                title = reader.GetString(1),
+        //                slug = reader.GetString(2),
+        //                authorId = reader.IsDBNull(4) ? null : reader.GetValue(4),
+        //                authorName = reader.IsDBNull(5) ? null : reader.GetString(5),
+        //                featuredImage = reader.IsDBNull(6) ? null : reader.GetString(6),
+        //                tags = reader.IsDBNull(7) ? null : reader.GetValue(7),
+        //                status = reader.GetString(8),
+        //                views = reader.GetInt32(9),
+        //                likes = reader.GetInt32(10),
+        //                createdAt = reader.GetDateTime(11),
+        //                sections = content?.Sections  // ✅ full sections included
+        //            });
+        //        }
+
+        //        return Ok(new
+        //        {
+        //            total = blogs.Count,
+        //            blogs
+        //        });
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return StatusCode(500, new { message = "Failed to fetch blogs", error = ex.Message });
+        //    }
+        //}
+
+        // ===================== 2) GetAllBlogs FIX =====================
         [HttpGet("GetAllBlogs")]
         public async Task<IActionResult> GetAllBlogs()
         {
@@ -592,7 +883,8 @@ namespace vaulterpAPI.Controllers.Blog
                 using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
                 using var cmd = new Npgsql.NpgsqlCommand(@"
             SELECT id, title, slug, content, author_id, author_name, 
-                   featured_image, tags, status, views, likes, created_at
+                   featured_image, tags, status, views, likes, created_at,
+                   meta_title, meta_description, meta_keywords, canonical_url, og_image
             FROM clinexy.blogs
             ORDER BY created_at DESC
         ", conn);
@@ -604,15 +896,19 @@ namespace vaulterpAPI.Controllers.Blog
 
                 while (await reader.ReadAsync())
                 {
-                    // Parse sections from JSONB content column
-                    var contentJson = reader.GetString(3);
-                    var content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+                    var contentJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+                    StructuredContent? content = null;
+                    if (!string.IsNullOrWhiteSpace(contentJson))
+                    {
+                        content = System.Text.Json.JsonSerializer.Deserialize<StructuredContent>(contentJson);
+                    }
 
                     blogs.Add(new
                     {
                         id = reader.GetGuid(0),
                         title = reader.GetString(1),
                         slug = reader.GetString(2),
+                        content = contentJson,
                         authorId = reader.IsDBNull(4) ? null : reader.GetValue(4),
                         authorName = reader.IsDBNull(5) ? null : reader.GetString(5),
                         featuredImage = reader.IsDBNull(6) ? null : reader.GetString(6),
@@ -621,7 +917,14 @@ namespace vaulterpAPI.Controllers.Blog
                         views = reader.GetInt32(9),
                         likes = reader.GetInt32(10),
                         createdAt = reader.GetDateTime(11),
-                        sections = content?.Sections  // ✅ full sections included
+
+                        metaTitle = reader.IsDBNull(12) ? null : reader.GetString(12),
+                        metaDescription = reader.IsDBNull(13) ? null : reader.GetString(13),
+                        metaKeywords = reader.IsDBNull(14) ? null : reader.GetString(14),
+                        canonicalUrl = reader.IsDBNull(15) ? null : reader.GetString(15),
+                        ogImage = reader.IsDBNull(16) ? null : reader.GetString(16),
+
+                        sections = content?.Sections
                     });
                 }
 
@@ -636,6 +939,7 @@ namespace vaulterpAPI.Controllers.Blog
                 return StatusCode(500, new { message = "Failed to fetch blogs", error = ex.Message });
             }
         }
+
 
         [HttpPut("UpdateBlog/{id}")]
         public async Task<IActionResult> UpdateBlog(Guid id, [FromBody] StructuredBlogRequest model)
@@ -652,6 +956,8 @@ namespace vaulterpAPI.Controllers.Blog
                 if (model.Sections == null || model.Sections.Count == 0)
                     return BadRequest("At least one section is required");
 
+                // Normalize slug
+                var slug = model.Slug.Trim().ToLower().Replace(" ", "-");
                 // ── Featured Image ──
                 string? featuredImage = !string.IsNullOrEmpty(model.FeaturedImage)
                     ? model.FeaturedImage
@@ -676,23 +982,43 @@ namespace vaulterpAPI.Controllers.Blog
                 using var conn = new Npgsql.NpgsqlConnection(GetConnectionString());
                 using var cmd = new Npgsql.NpgsqlCommand(@"
             UPDATE clinexy.blogs
-            SET title          = @title,
-                slug           = @slug,
-                content        = @content,
-                author_id      = @author_id,
-                author_name    = @author_name,
-                featured_image = @featured_image,
-                tags           = @tags,
-                status         = @status,
-                updated_at     = NOW()
+            SET title            = @title,
+                slug             = @slug,
+                content          = @content,
+                meta_title       = @meta_title,
+                meta_description = @meta_description,
+                meta_keywords    = @meta_keywords,
+                canonical_url    = @canonical_url,
+                og_image         = @og_image,
+                author_id        = @author_id,
+                author_name      = @author_name,
+                featured_image   = @featured_image,
+                tags             = @tags,
+                status           = @status,
+                updated_at       = NOW()
             WHERE id = @id
             RETURNING id
         ", conn);
 
                 cmd.Parameters.AddWithValue("@id", id);
                 cmd.Parameters.AddWithValue("@title", model.Title);
-                cmd.Parameters.AddWithValue("@slug", model.Slug);
+                cmd.Parameters.AddWithValue("@slug", slug);
                 cmd.Parameters.AddWithValue("@content", NpgsqlTypes.NpgsqlDbType.Jsonb, finalContent);
+                cmd.Parameters.AddWithValue("@meta_title",
+           (object?)(model.MetaTitle ?? model.Title) ?? DBNull.Value);
+
+                cmd.Parameters.AddWithValue("@meta_description",
+                    (object?)model.MetaDescription ?? DBNull.Value);
+
+                cmd.Parameters.AddWithValue("@meta_keywords",
+                    (object?)model.MetaKeywords ?? DBNull.Value);
+
+                cmd.Parameters.AddWithValue("@canonical_url",
+                    (object?)model.CanonicalUrl ?? DBNull.Value);
+
+                cmd.Parameters.AddWithValue("@og_image",
+                    (object?)model.OgImage ?? DBNull.Value);
+
                 cmd.Parameters.AddWithValue("@author_id", (object?)model.AuthorId ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@author_name", (object?)model.AuthorName ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@featured_image", (object?)featuredImage ?? DBNull.Value);
@@ -721,6 +1047,30 @@ namespace vaulterpAPI.Controllers.Blog
             }
         }
 
+        // ===================== 1) MapBlog FIX =====================
+        private BlogDto MapBlog(NpgsqlDataReader reader)
+        {
+            return new BlogDto
+            {
+                Id = Guid.Parse(reader["id"].ToString()!),
+                Title = reader["title"]?.ToString() ?? "",
+                Slug = reader["slug"]?.ToString() ?? "",
+                Content = reader["content"]?.ToString(),
+                AuthorId = reader["author_id"] is DBNull ? null : (Guid?)reader["author_id"],
+                AuthorName = reader["author_name"]?.ToString() ?? "",
+                FeaturedImage = reader["featured_image"]?.ToString() ?? "",
+                Tags = reader["tags"] is string[] tags ? tags : Array.Empty<string>(),
+                Status = reader["status"]?.ToString() ?? "draft",
+                Views = reader["views"] is DBNull ? 0 : Convert.ToInt32(reader["views"]),
+                Likes = reader["likes"] is DBNull ? 0 : Convert.ToInt32(reader["likes"]),
+
+                MetaTitle = reader["meta_title"] is DBNull ? null : reader["meta_title"]?.ToString(),
+                MetaDescription = reader["meta_description"] is DBNull ? null : reader["meta_description"]?.ToString(),
+                MetaKeywords = reader["meta_keywords"] is DBNull ? null : reader["meta_keywords"]?.ToString(),
+                CanonicalUrl = reader["canonical_url"] is DBNull ? null : reader["canonical_url"]?.ToString(),
+                OgImage = reader["og_image"] is DBNull ? null : reader["og_image"]?.ToString()
+            };
+        }
 
 
 
